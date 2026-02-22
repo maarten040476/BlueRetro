@@ -88,7 +88,7 @@ static meta_init_t meta_init_func[WIRED_MAX] = {
     pce_meta_init, /* PCE */
     genesis_meta_init, /* GENESIS */
     npiso_meta_init, /* SNES */
-    cdi_meta_init, /* CDI */
+    NULL, /* CDI */
     NULL, /* CD32 */
     real_meta_init, /* REAL_3DO */
     jag_meta_init, /* JAGUAR */
@@ -115,7 +115,7 @@ static DRAM_ATTR buffer_init_t buffer_init_func[WIRED_MAX] = {
     pce_init_buffer, /* PCE */
     genesis_init_buffer, /* GENESIS */
     npiso_init_buffer, /* SNES */
-    cdi_init_buffer, /* CDI */
+    NULL, /* CDI */
     NULL, /* CD32 */
     real_init_buffer, /* REAL_3DO */
     jag_init_buffer, /* JAGUAR */
