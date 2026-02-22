@@ -7,196 +7,28 @@
 #include "soc/gpio_struct.h"
 #include "zephyr/types.h"
 #include "tools/util.h"
-#include "npiso.h"
-/*#include "cdi.h"*/
-#include "genesis.h"
-#include "pce.h"
-#include "real.h"
-#include "jag.h"
-#include "pcfx.h"
-#include "ps.h"
-#include "saturn.h"
-#include "jvs.h"
-#include "n64.h"
-#include "dc.h"
 #include "gc.h"
-#include "parallel_1p.h"
-#include "parallel_2p.h"
-#include "sea.h"
-#include "wii.h"
 #include "wired.h"
 
-static from_generic_t from_generic_func[WIRED_MAX] = {
-    NULL, /* WIRED_AUTO */
-    NULL, /* PARALLEL_1P */
-    NULL, /* PARALLEL_2P */
-    NULL, /* NES */
-    NULL, /* PCE */
-    NULL, /* GENESIS */
-    NULL, /* SNES */
-    NULL, /* CDI */
-    NULL, /* CD32 */
-    NULL, /* REAL_3DO */
-    NULL, /* JAGUAR */
-    NULL, /* PSX */
-    NULL, /* SATURN */
-    NULL, /* PCFX */
-    NULL, /* JVS */
-    NULL, /* N64 */
-    NULL, /* DC */
-    NULL, /* PS2 */
-    gc_from_generic, /* GC */
-    NULL, /* WII_EXT */
-    NULL, /* VB */
-    NULL, /* PARALLEL_1P_OD */
-    NULL, /* PARALLEL_2P_OD */
-    NULL, /* SEA_BOARD */
-};
-
-static fb_to_generic_t fb_to_generic_func[WIRED_MAX] = {
-    NULL, /* WIRED_AUTO */
-    NULL, /* PARALLEL_1P */
-    NULL, /* PARALLEL_2P */
-    NULL, /* NES */
-    NULL, /* PCE */
-    NULL, /* GENESIS */
-    NULL, /* SNES */
-    NULL, /* CDI */
-    NULL, /* CD32 */
-    NULL, /* REAL_3DO */
-    NULL, /* JAGUAR */
-    NULL, /* PSX */
-    NULL, /* SATURN */
-    NULL, /* PCFX */
-    NULL, /* JVS */
-    NULL, /* N64 */
-    NULL, /* DC */
-    NULL, /* PS2 */
-    gc_fb_to_generic, /* GC */
-    NULL, /* WII_EXT */
-    NULL, /* VB */
-    NULL, /* PARALLEL_1P_OD */
-    NULL, /* PARALLEL_2P_OD */
-    NULL, /* SEA_BOARD */
-};
-
-static meta_init_t meta_init_func[WIRED_MAX] = {
-    NULL, /* WIRED_AUTO */
-    NULL, /* PARALLEL_1P */
-    NULL, /* PARALLEL_2P */
-    NULL, /* NES */
-    NULL, /* PCE */
-    NULL, /* GENESIS */
-    NULL, /* SNES */
-    NULL, /* CDI */
-    NULL, /* CD32 */
-    NULL, /* REAL_3DO */
-    NULL, /* JAGUAR */
-    NULL, /* PSX */
-    NULL, /* SATURN */
-    NULL, /* PCFX */
-    NULL, /* JVS */
-    NULL, /* N64 */
-    NULL, /* DC */
-    NULL, /* PS2 */
-    gc_meta_init, /* GC */
-    NULL, /* WII_EXT */
-    NULL, /* VB */
-    NULL, /* PARALLEL_1P_OD */
-    NULL, /* PARALLEL_2P_OD */
-    NULL, /* SEA_BOARD */
-};
-
-static DRAM_ATTR buffer_init_t buffer_init_func[WIRED_MAX] = {
-    NULL, /* WIRED_AUTO */
-    NULL, /* PARALLEL_1P */
-    NULL, /* PARALLEL_2P */
-    NULL, /* NES */
-    NULL, /* PCE */
-    NULL, /* GENESIS */
-    NULL, /* SNES */
-    NULL, /* CDI */
-    NULL, /* CD32 */
-    NULL, /* REAL_3DO */
-    NULL, /* JAGUAR */
-    NULL, /* PSX */
-    NULL, /* SATURN */
-    NULL, /* PCFX */
-    NULL, /* JVS */
-    NULL, /* N64 */
-    NULL, /* DC */
-    NULL, /* PS2 */
-    gc_init_buffer, /* GC */
-    NULL, /* WII_EXT */
-    NULL, /* VB */
-    NULL, /* PARALLEL_1P_OD */
-    NULL, /* PARALLEL_2P_OD */
-    NULL, /* SEA_BOARD */
-};
-
 int32_t wired_meta_init(struct wired_ctrl *ctrl_data) {
-    if (meta_init_func[wired_adapter.system_id]) {
-        meta_init_func[wired_adapter.system_id](ctrl_data);
-        return 0;
-    }
-    return -1;
+    gc_meta_init(ctrl_data);
+    return 0;
 }
 
 void IRAM_ATTR wired_init_buffer(int32_t dev_mode, struct wired_data *wired_data) {
-    if (buffer_init_func[wired_adapter.system_id]) {
-        buffer_init_func[wired_adapter.system_id](dev_mode, wired_data);
-    }
+    gc_init_buffer(dev_mode, wired_data);
 }
 
 void wired_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data) {
-    if (from_generic_func[wired_adapter.system_id]) {
-        from_generic_func[wired_adapter.system_id](dev_mode, ctrl_data, wired_data);
-    }
+    gc_from_generic(dev_mode, ctrl_data, wired_data);
 }
 
 void wired_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct generic_fb *fb_data) {
-    if (fb_to_generic_func[wired_adapter.system_id]) {
-        fb_to_generic_func[wired_adapter.system_id](dev_mode, raw_fb_data, fb_data);
-    }
+    gc_fb_to_generic(dev_mode, raw_fb_data, fb_data);
 }
 
 void wired_para_turbo_mask_hdlr(void) {
-    if (wired_adapter.system_id == PARALLEL_1P || wired_adapter.system_id == PARALLEL_1P_OD) {
-        struct para_1p_map *map = (struct para_1p_map *)wired_adapter.data[0].output;
-        struct para_1p_map *turbo_map_mask = (struct para_1p_map *)wired_adapter.data[0].output_mask;
-
-        ++wired_adapter.data[0].frame_cnt;
-        para_1p_gen_turbo_mask(&wired_adapter.data[0]);
-
-        GPIO.out = map->buttons | turbo_map_mask->buttons;
-        GPIO.out1.val = map->buttons_high | turbo_map_mask->buttons_high;
-    }
-    else if (wired_adapter.system_id == PARALLEL_2P || wired_adapter.system_id == PARALLEL_2P_OD) {
-        struct para_2p_map *map1 = (struct para_2p_map *)wired_adapter.data[0].output;
-        struct para_2p_map *map2 = (struct para_2p_map *)wired_adapter.data[1].output;
-        struct para_2p_map *map1_mask = (struct para_2p_map *)wired_adapter.data[0].output_mask;
-        struct para_2p_map *map2_mask = (struct para_2p_map *)wired_adapter.data[1].output_mask;
-
-        ++wired_adapter.data[0].frame_cnt;
-        para_2p_gen_turbo_mask(0, &wired_adapter.data[0]);
-        ++wired_adapter.data[1].frame_cnt;
-        para_2p_gen_turbo_mask(1, &wired_adapter.data[1]);
-
-        GPIO.out = (map1->buttons | map1_mask->buttons) & (map2->buttons | map2_mask->buttons);
-        GPIO.out1.val = (map1->buttons_high | map1_mask->buttons_high) & (map2->buttons_high | map2_mask->buttons_high);
-    }
-    else if (wired_adapter.system_id == SEA_BOARD) {
-        struct sea_map *map = (struct sea_map *)wired_adapter.data[0].output;
-        struct sea_map *turbo_map_mask = (struct sea_map *)wired_adapter.data[0].output_mask;
-
-        ++wired_adapter.data[0].frame_cnt;
-        sea_gen_turbo_mask(&wired_adapter.data[0]);
-
-        if (!(map->gbahd_state & BIT(GBAHD_STATE_OSD))) {
-            GPIO.out = map->buttons | turbo_map_mask->buttons;
-            GPIO.out1.val = map->buttons_high | turbo_map_mask->buttons_high;
-        }
-    }
+    /* No parallel/SEA handling needed for GC-only build */
 }
 
 void IRAM_ATTR wired_gen_turbo_mask_btns16_pos(struct wired_data *wired_data, uint16_t *buttons, const uint32_t btns_mask[32]) {
