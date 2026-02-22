@@ -8,7 +8,7 @@
 #include "zephyr/types.h"
 #include "tools/util.h"
 #include "npiso.h"
-#include "cdi.h"
+/*#include "cdi.h"*/
 #include "genesis.h"
 #include "pce.h"
 #include "real.h"
@@ -34,7 +34,7 @@ static from_generic_t from_generic_func[WIRED_MAX] = {
     pce_from_generic, /* PCE */
     genesis_from_generic, /* GENESIS */
     npiso_from_generic, /* SNES */
-    cdi_from_generic, /* CDI */
+    NULL, /* CDI */
     NULL, /* CD32 */
     real_from_generic, /* REAL_3DO */
     jag_from_generic, /* JAGUAR */
