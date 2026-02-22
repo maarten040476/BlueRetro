@@ -8,12 +8,17 @@
 #include "tools/util.h"
 #include "adapter/adapter.h"
 #include "adapter/config.h"
-#include "adapter/wired/pce.h"
 #include "system/core0_stall.h"
 #include "system/delay.h"
 #include "system/gpio.h"
 #include "system/intr.h"
 #include "pce_io.h"
+
+/* Declarations formerly in adapter/wired/pce.h */
+void pce_meta_init(struct wired_ctrl *ctrl_data);
+void pce_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void pce_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void pce_gen_turbo_mask(struct wired_data *wired_data);
 
 #define GPIO_INTR_NUM 21
 
