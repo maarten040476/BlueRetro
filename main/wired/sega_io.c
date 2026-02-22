@@ -10,13 +10,24 @@
 #include "adapter/adapter.h"
 #include "adapter/config.h"
 #include "adapter/kb_monitor.h"
-#include "adapter/wired/genesis.h"
-#include "adapter/wired/saturn.h"
 #include "system/core0_stall.h"
 #include "system/delay.h"
 #include "system/gpio.h"
 #include "system/intr.h"
 #include "sega_io.h"
+
+/* Declarations formerly in adapter/wired/genesis.h */
+void genesis_meta_init(struct wired_ctrl *ctrl_data);
+void genesis_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void genesis_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void genesis_gen_turbo_mask(uint32_t index, struct wired_data *wired_data);
+void genesis_twh_gen_turbo_mask(struct wired_data *wired_data);
+
+/* Declarations formerly in adapter/wired/saturn.h */
+void saturn_meta_init(struct wired_ctrl *ctrl_data);
+void saturn_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void saturn_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void saturn_gen_turbo_mask(struct wired_data *wired_data);
 
 #define P1_TH_PIN 35
 #define P1_TR_PIN 27
