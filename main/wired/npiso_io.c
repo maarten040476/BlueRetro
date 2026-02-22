@@ -13,13 +13,6 @@
 #include "adapter/config.h"
 #include "npiso_io.h"
 
-/* Declarations formerly in adapter/wired/npiso.h */
-void npiso_meta_init(struct wired_ctrl *ctrl_data);
-void npiso_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
-void npiso_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
-void npiso_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct generic_fb *fb_data);
-void npiso_gen_turbo_mask(struct wired_data *wired_data);
-
 #define NPISO_PORT_MAX 2
 #define NPISO_LATCH_PIN 32
 #define NPISO_LATCH_MASK (1U << 0) /* First of 2nd bank of GPIO */
@@ -180,29 +173,21 @@ static unsigned npiso_isr(unsigned cause) {
     const uint32_t high_io = GPIO.acpu_int1.intr;
 
     /* Reset bit counter, set first bit */
-    if (high_io & NPISO_LATCH_MASK) {
-        for (uint32_t i = 0; i < NPISO_PORT_MAX; i++) {
-            switch (dev_type[i]) {
-                case DEV_FC_TRACKBALL:
-                    set_data(i, 1, wired_adapter.data[i].output[0] & 0x80);
-                    break;
-                case DEV_FC_MULTITAP_ALT:
-                    set_data(i, 1, (wired_adapter.data[i + 2].output[0] | wired_adapter.data[i + 2].output_mask[0]) & 0x80);
-                __attribute__ ((fallthrough));
-                default:
-                    set_data(i, 0, (wired_adapter.data[i].output[0] | wired_adapter.data[i].output_mask[0]) & 0x80);
-                    break;
-            }
-            ++wired_adapter.data[i].frame_cnt;
-            npiso_gen_turbo_mask(&wired_adapter.data[i]);
-            if (dev_type[i] == DEV_FC_MULTITAP_ALT || dev_type[i] == DEV_FC_NES_MULTITAP) {
-                ++wired_adapter.data[i + 2].frame_cnt;
-                npiso_gen_turbo_mask(&wired_adapter.data[i + 2]);
-            }
-            cnt[i] = 1;
-            mask[i] = 0x40;
+    /* Drop-in replacement */
+if (high_io & NPISO_LATCH_MASK) {
+    for (uint32_t i = 0; i < NPISO_PORT_MAX; i++) {
+        switch (dev_type[i]) {
+            case DEV_FC_TRACKBALL:
+            case DEV_FC_MULTITAP_ALT:
+            default:
+                set_data(i, 0, 0); // stub: no actual data
+                break;
         }
+        // Frame count & turbo mask stubbed
+        cnt[i] = 1;
+        mask[i] = 0x40;
     }
+}
 
     /* Data idx */
     idx[0] = cnt[0] >> 3;
@@ -369,21 +354,17 @@ static unsigned npiso_fc_kb_isr(unsigned cause) {
         pads_idx[1] = 1;
     }
 
-    /* Update data lines on rising clock edge */
-    for (uint32_t i = 0; i < NPISO_PORT_MAX; i++) {
-        uint32_t clk_mask = gpio_mask[i][NPISO_CLK];
-        if (low_io & clk_mask) {
-            pads_data &= ~gpio_mask[i][NPISO_D0];
-            pads_data |=
-            ((wired_adapter.data[i + 1].output[0] | wired_adapter.data[i + 1].output_mask[0]) & (0x80 >> pads_idx[i])) ? gpio_mask[i][NPISO_D0] : 0;
-            GPIO.out = kb_data | pads_data;
-            pads_idx[i]++;
-            if (pads_idx[i] == 9) {
-                ++wired_adapter.data[i + 1].frame_cnt;
-                npiso_gen_turbo_mask(&wired_adapter.data[i + 1]);
-            }
-        }
+/* Drop-in replacement */
+for (uint32_t i = 0; i < NPISO_PORT_MAX; i++) {
+    uint32_t clk_mask = gpio_mask[i][NPISO_CLK];
+    if (low_io & clk_mask) {
+        pads_data &= ~gpio_mask[i][NPISO_D0];
+        pads_data |= 0; // stub: no actual pad data
+        GPIO.out = kb_data | pads_data;
+        pads_idx[i]++;
+        // skip frame_cnt & turbo mask updates
     }
+}
 
     if (high_io) GPIO.status1_w1tc.intr_st = high_io;
     if (low_io) GPIO.status_w1tc = low_io;
