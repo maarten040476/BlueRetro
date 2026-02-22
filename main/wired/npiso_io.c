@@ -11,8 +11,14 @@
 #include "tools/util.h"
 #include "adapter/adapter.h"
 #include "adapter/config.h"
-#include "adapter/wired/npiso.h"
 #include "npiso_io.h"
+
+/* Declarations formerly in adapter/wired/npiso.h */
+void npiso_meta_init(struct wired_ctrl *ctrl_data);
+void npiso_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void npiso_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void npiso_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct generic_fb *fb_data);
+void npiso_gen_turbo_mask(struct wired_data *wired_data);
 
 #define NPISO_PORT_MAX 2
 #define NPISO_LATCH_PIN 32
