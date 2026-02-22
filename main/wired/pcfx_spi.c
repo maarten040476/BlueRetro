@@ -19,9 +19,13 @@
 #include "tools/util.h"
 #include "adapter/adapter.h"
 #include "adapter/config.h"
-#include "adapter/wired/pcfx.h"
 #include "wired_bare.h"
 #include "pcfx_spi.h"
+
+void pcfx_meta_init(struct wired_ctrl *ctrl_data);
+void pcfx_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void pcfx_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void pcfx_gen_turbo_mask(struct wired_data *wired_data);
 
 #define GPIO_INTR_NUM 19
 
