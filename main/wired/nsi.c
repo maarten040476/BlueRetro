@@ -16,8 +16,6 @@
 #include "tools/util.h"
 #include "adapter/adapter.h"
 #include "adapter/config.h"
-#include "adapter/memory_card.h"
-#include "adapter/wired/n64.h"
 #include "adapter/wired/gc.h"
 #include "system/gpio.h"
 #include "system/intr.h"
@@ -26,19 +24,9 @@
 #define BIT_ZERO 0x80020006
 #define BIT_ONE  0x80060002
 #define BIT_ONE_MASK 0x7FFC0000
-#define STOP_BIT_1US 0x80000002
 #define STOP_BIT_2US 0x80000004
 
-#define N64_BIT_PERIOD_TICKS 8
 #define GC_BIT_PERIOD_TICKS 10
-
-#define N64_MOUSE 0x0002
-#define N64_CTRL 0x0005
-#define N64_KB 0x0200
-
-#define N64_SLOT_EMPTY 0x02
-#define N64_SLOT_OCCUPY 0x01
-#define N64_SLOT_CHANGE 0x03
 
 #define GAME_ID_CMD 0x1D
 
@@ -50,7 +38,6 @@ typedef struct {
     } chan[SOC_RMT_CHANNELS_PER_GROUP];
 } rmt_mem_t;
 
-// RMTMEM address is declared in <target>.peripherals.ld
 extern rmt_mem_t RMTMEM;
 
 static const uint8_t gpio_pin[4] = {
@@ -64,15 +51,6 @@ static const uint8_t rmt_ch[4][2] = {
     {3, 6},
 };
 
-static const uint8_t rumble_ident[32] = {
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-};
-//static const uint8_t transfer_ident[32] = {
-//    0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84,
-//    0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84, 0x84,
-//};
-static const uint8_t empty[32] = {0};
 static const uint8_t nsi_crc_table[256] = {
     0x8F, 0x85, 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0xC2, 0x61, 0xF2, 0x79, 0xFE, 0x7F,
     0xFD, 0xBC, 0x5E, 0x2F, 0xD5, 0xA8, 0x54, 0x2A, 0x15, 0xC8, 0x64, 0x32, 0x19, 0xCE, 0x67, 0xF1,
@@ -102,38 +80,8 @@ static uint8_t buf[128] = {0};
 static uint32_t *buf32 = (uint32_t *)buf;
 static uint16_t *buf16 = (uint16_t *)buf;
 static uint8_t last_rumble[4] = {0};
-static uint8_t rumble_state[4] = {0};
-static uint8_t ctrl_acc_mode[4] = {0};
-static uint8_t ctrl_acc_update[4] = {0};
-static uint8_t ctrl_mem_banksel = 0;
-static uint8_t ctrl_init = 0;
 static uint32_t gc_l_trig_prev_state[4] = {0};
 static uint32_t gc_r_trig_prev_state[4] = {0};
-
-static inline void load_mouse_axes(uint8_t port, uint8_t *axes) {
-    uint8_t *relative = (uint8_t *)(wired_adapter.data[port].output + 2);
-    int32_t *raw_axes = (int32_t *)(wired_adapter.data[port].output + 4);
-    int32_t val = 0;
-
-    for (uint32_t i = 0; i < 2; i++) {
-        if (relative[i]) {
-            val = atomic_clear(&raw_axes[i]);
-        }
-        else {
-            val = raw_axes[i];
-        }
-
-        if (val > 127) {
-            axes[i] = 127;
-        }
-        else if (val < -128) {
-            axes[i] = -128;
-        }
-        else {
-            axes[i] = (uint8_t)val;
-        }
-    }
-}
 
 static uint16_t nsi_bytes_to_items_crc(uint32_t item, const uint8_t *data, uint32_t len, uint8_t *crc, uint32_t stop_bit) {
     const uint8_t *crc_table = nsi_crc_table;
@@ -200,30 +148,10 @@ static uint16_t nsi_items_to_bytes(uint32_t item, uint8_t *data, uint32_t len) {
     return item;
 }
 
-static uint16_t nsi_items_to_bytes_crc(uint32_t item, uint8_t *data, uint32_t len, uint8_t *crc) {
-    const uint8_t *crc_table = nsi_crc_table;
-    uint32_t bit_len = item + len * 8;
-    volatile uint32_t *item_ptr = &rmt_items[item].val;
-
-    *crc = 0xFF;
-    for (; item < bit_len; ++data) {
-        do {
-            if (*item_ptr & BIT_ONE_MASK) {
-                *crc ^= *crc_table;
-            }
-            ++crc_table;
-            ++item_ptr;
-            ++item;
-        } while ((item % 8));
-    }
-    return item;
-}
-
 static void nsi_game_id_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
     struct raw_fb fb_data = {0};
 
     item = nsi_items_to_bytes(item, buf, 10);
-    /* Don't answer, go back read */
     RMT.conf_ch[channel].conf1.mem_rd_rst = 1;
     RMT.conf_ch[channel].conf1.mem_rd_rst = 0;
     RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_HW;
@@ -236,169 +164,6 @@ static void nsi_game_id_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
         fb_data.data[i] = buf[i];
     }
     adapter_q_fb(&fb_data);
-}
-
-static void n64_kb_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
-    uint8_t crc;
-
-    switch (buf[0]) {
-        case GAME_ID_CMD:
-            nsi_game_id_cmd_hdlr(channel, port, item);
-            break;
-        case 0x13:
-            memcpy(buf, wired_adapter.data[channel].output, 7);
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 7, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-            ++wired_adapter.data[channel].frame_cnt;
-            break;
-        default:
-            /* 0x00 & 0xFF cmds goes here, corrupt cmd too! This help avoid ctrl detection error */
-            *(uint16_t *)buf = N64_KB;
-            buf[2] = N64_SLOT_EMPTY;
-
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 3, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-            break;
-    }
-}
-
-static void n64_mouse_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
-    uint8_t crc;
-
-    switch (buf[0]) {
-        case GAME_ID_CMD:
-            nsi_game_id_cmd_hdlr(channel, port, item);
-            break;
-        case 0x01:
-                memcpy(buf, wired_adapter.data[channel].output, 2);
-                load_mouse_axes(channel, &buf[2]);
-                nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 4, &crc, STOP_BIT_2US);
-                RMT.conf_ch[channel].conf1.tx_start = 1;
-
-                ++wired_adapter.data[channel].frame_cnt;
-            break;
-        default:
-            /* 0x00 & 0xFF cmds goes here, corrupt cmd too! This help avoid ctrl detection error */
-            *(uint16_t *)buf = N64_MOUSE;
-            buf[2] = N64_SLOT_EMPTY;
-
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 3, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-            break;
-    }
-}
-
-static void n64_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
-    uint8_t crc;
-
-    switch (buf[0]) {
-        case GAME_ID_CMD:
-            nsi_game_id_cmd_hdlr(channel, port, item);
-            break;
-        case 0x01:
-            buf32[0] = wired_adapter.data[channel].output32[0] & wired_adapter.data[channel].output_mask32[0];
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 4, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-
-            ++wired_adapter.data[channel].frame_cnt;
-            if (ctrl_acc_update[channel] > 1) {
-                ctrl_acc_update[channel]--;
-            }
-            n64_gen_turbo_mask(&wired_adapter.data[channel]);
-            break;
-        case 0x02:
-            item = nsi_items_to_bytes(item, buf, 2);
-            if (buf[0] == 0x80 && buf[1] == 0x01) {
-                if (config.out_cfg[channel].acc_mode == ACC_RUMBLE && rumble_state[channel]) {
-                    item = nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, rumble_ident, 32, &crc, STOP_BIT_2US);
-                }
-                else {
-                    item = nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, empty, 32, &crc, STOP_BIT_2US);
-                }
-            }
-            else {
-                if (config.out_cfg[channel].acc_mode == ACC_RUMBLE) {
-                    item = nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, empty, 32, &crc, STOP_BIT_2US);
-                }
-                else {
-                    uint32_t addr = (buf[0] << 8) | (buf[1] & 0xE0);
-
-                    if (addr < 0x8000) {
-                        addr += ((channel + ctrl_mem_banksel) & 0x3) * 32 * 1024;
-                        item = nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, mc_get_ptr(addr), 32, &crc, STOP_BIT_2US);
-                    }
-                    else {
-                        item = nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, empty, 32, &crc, STOP_BIT_2US);
-                    }
-                }
-            }
-            buf[0] = crc ^ 0xFF;
-            nsi_bytes_to_items_crc(item, buf, 1, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-            break;
-        case 0x03:
-            item = nsi_items_to_bytes(item, buf, 2);
-            nsi_items_to_bytes_crc(item, buf + 2, 32, &crc);
-            buf[35] = crc ^ 0xFF;
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf + 35, 1, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-
-            nsi_items_to_bytes(item, buf + 2, 32);
-            if (config.out_cfg[channel].acc_mode == ACC_RUMBLE) {
-                if (buf[0] == 0xC0 && last_rumble[channel] != buf[2]) {
-                    struct raw_fb fb_data = {0};
-
-                    last_rumble[channel] = buf[2];
-                    fb_data.header.wired_id = channel;
-                    fb_data.header.type = FB_TYPE_RUMBLE;
-                    fb_data.header.data_len = 1;
-                    fb_data.data[0] = buf[2];
-                    adapter_q_fb(&fb_data);
-                }
-                else if (buf[0] == 0x80 && buf[1] == 0x01) {
-                    switch (buf[2]) {
-                        case 0xFE:
-                            rumble_state[channel] = 0;
-                            break;
-                        case 0x80:
-                            rumble_state[channel] = 1;
-                            break;
-                    }
-                }
-            }
-            else if (config.out_cfg[channel].acc_mode == ACC_MEM) {
-                uint32_t addr = (buf[0] << 8) | (buf[1] & 0xE0);
-
-                if (addr < 0x8000) {
-                    addr += ((channel + ctrl_mem_banksel) & 0x3) * 32 * 1024;
-                    mc_write(addr, buf + 2, 32);
-                }
-            }
-            break;
-        default:
-            /* 0x00 & 0xFF cmds goes here, corrupt cmd too! This help avoid ctrl detection error */
-            *(uint16_t *)buf = N64_CTRL;
-            if (config.out_cfg[channel].acc_mode > ACC_NONE && config.out_cfg[channel].acc_mode < ACC_BOTH) {
-                if (ctrl_acc_update[channel] > 1) {
-                    buf[2] = N64_SLOT_EMPTY;
-                    ctrl_acc_update[channel]--;
-                }
-                else if (ctrl_acc_update[channel] == 1) {
-                    buf[2] = N64_SLOT_CHANGE;
-                    ctrl_acc_update[channel] = 0;
-                }
-                else {
-                    buf[2] = N64_SLOT_OCCUPY;
-                }
-            }
-            else {
-                buf[2] = N64_SLOT_EMPTY;
-            }
-
-            nsi_bytes_to_items_crc(channel * RMT_MEM_ITEM_NUM, buf, 3, &crc, STOP_BIT_2US);
-            RMT.conf_ch[channel].conf1.tx_start = 1;
-            break;
-    }
 }
 
 static void gc_kb_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
@@ -421,7 +186,6 @@ static void gc_kb_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
             ++wired_adapter.data[port].frame_cnt;
             break;
         default:
-            /* Bad frame go back RX */
             RMT.conf_ch[channel].conf1.mem_rd_rst = 1;
             RMT.conf_ch[channel].conf1.mem_rd_rst = 0;
             RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_HW;
@@ -455,7 +219,6 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
             uint8_t trig_l = buf[10];
             uint8_t trig_r = buf[11];
 
-            /* Delay Digital trigger state until analog part is set at least 2 frames */
             if (gc_r_trig_prev_state[port] < 2) {
                 buf[5] &= ~0x20;
             }
@@ -463,7 +226,6 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
                 buf[5] &= ~0x40;
             }
 
-            /* A & B buttons pressure is zeroed like release controller */
             if (buf[0] == 0x43) {
                 len = 10;
                 buf[12] = 0;
@@ -471,7 +233,6 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
             }
             else switch (buf[1]) {
                 case 1:
-                    /* 4bits C axes + 8bits triggers + 4bits pressure */
                     buf[8] &= 0xF0;
                     buf[8] |= buf[9] >> 4;
                     buf[9] = buf[10];
@@ -479,7 +240,6 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
                     buf[11] = 0x00;
                     break;
                 case 2:
-                    /* 4bits C axes + 4bits triggers + 8bits pressure */
                     buf[8] &= 0xF0;
                     buf[8] |= buf[9] >> 4;
                     buf[9] &= 0xF0;
@@ -488,15 +248,12 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
                     buf[11] = 0x00;
                     break;
                 case 3:
-                    /* 8bits C axes + 8bits triggers */
                     break;
                 case 4:
-                    /* 8bits C axes + 8bits pressure */
                     buf[10] = 0x00;
                     buf[11] = 0x00;
                     break;
                 default:
-                    /* 8bits C axes + 4bits triggers + 4bits pressure */
                     buf[10] &= 0xF0;
                     buf[10] |= buf[11] >> 4;
                     buf[11] = 0x00;
@@ -546,84 +303,12 @@ static void gc_pad_cmd_hdlr(uint8_t channel, uint8_t port, uint16_t item) {
             wired_adapter.data[port].output[0] &= ~0x20;
             break;
         default:
-            /* Bad frame go back RX */
             RMT.conf_ch[channel].conf1.mem_rd_rst = 1;
             RMT.conf_ch[channel].conf1.mem_rd_rst = 0;
             RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_HW;
             RMT.conf_ch[channel].conf1.rx_en = 1;
             break;
     }
-}
-
-static unsigned n64_isr(unsigned cause) {
-    const uint32_t intr_st = RMT.int_st.val;
-    uint32_t status = intr_st;
-    uint16_t item;
-    uint8_t i, channel;
-
-    while (status) {
-        i = __builtin_ffs(status) - 1;
-        status &= ~(1 << i);
-        channel = i / 3;
-        switch (i % 3) {
-            /* TX End */
-            case 0:
-                //ets_printf("TX_END\n");
-                RMT.conf_ch[channel].conf1.mem_rd_rst = 1;
-                RMT.conf_ch[channel].conf1.mem_rd_rst = 0;
-                /* Go RX right away */
-                RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_HW;
-                RMT.conf_ch[channel].conf1.rx_en = 1;
-                break;
-            /* RX End */
-            case 1:
-                //ets_printf("RX_END\n");
-                RMT.conf_ch[channel].conf1.rx_en = 0;
-                RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_SW;
-                RMT.conf_ch[channel].conf1.mem_wr_rst = 1;
-                item = nsi_items_to_bytes(channel * RMT_MEM_ITEM_NUM, buf, 1);
-
-                /* Check if need to flag a pak change */
-                if (ctrl_init == 0) {
-                    ctrl_mem_banksel = config.global_cfg.banksel;
-                    ctrl_acc_mode[0] = config.out_cfg[0].acc_mode;
-                    ctrl_acc_mode[1] = config.out_cfg[1].acc_mode;
-                    ctrl_acc_mode[2] = config.out_cfg[2].acc_mode;
-                    ctrl_acc_mode[3] = config.out_cfg[3].acc_mode;
-                    ctrl_init = 1;
-                }
-                else if (config.global_cfg.banksel != ctrl_mem_banksel) {
-                    *(uint32_t *)ctrl_acc_update = 0x20202020;
-                    ctrl_mem_banksel = config.global_cfg.banksel;
-                }
-                else if (ctrl_acc_mode[channel] != config.out_cfg[channel].acc_mode) {
-                    ctrl_acc_update[channel] = 0x20;
-                    ctrl_acc_mode[channel] = config.out_cfg[channel].acc_mode;
-                }
-
-                switch (config.out_cfg[channel].dev_mode) {
-                    case DEV_KB:
-                        n64_kb_cmd_hdlr(channel, channel, item);
-                        break;
-                    case DEV_MOUSE:
-                        n64_mouse_cmd_hdlr(channel, channel, item);
-                        break;
-                    default:
-                        n64_pad_cmd_hdlr(channel, channel, item);
-                        break;
-                }
-                break;
-            /* Error */
-            case 2:
-                ets_printf("ERR\n");
-                RMT.int_ena.val &= (~(BIT(i)));
-                break;
-            default:
-                break;
-        }
-    }
-    RMT.int_clr.val = intr_st;
-    return 0;
 }
 
 static unsigned gc_isr(unsigned cause) {
@@ -638,18 +323,13 @@ static unsigned gc_isr(unsigned cause) {
         channel = i / 3;
         port = channel / 2;
         switch (i % 3) {
-            /* TX End */
             case 0:
-                //ets_printf("TX_END\n");
                 RMT.conf_ch[channel].conf1.mem_rd_rst = 1;
                 RMT.conf_ch[channel].conf1.mem_rd_rst = 0;
-                /* Go RX right away */
                 RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_HW;
                 RMT.conf_ch[channel].conf1.rx_en = 1;
                 break;
-            /* RX End */
             case 1:
-                //ets_printf("RX_END\n");
                 RMT.conf_ch[channel].conf1.rx_en = 0;
                 RMT.conf_ch[channel].conf1.mem_owner = RMT_LL_MEM_OWNER_SW;
                 RMT.conf_ch[channel].conf1.mem_wr_rst = 1;
@@ -663,7 +343,6 @@ static unsigned gc_isr(unsigned cause) {
                         break;
                 }
                 break;
-            /* Error */
             case 2:
                 ets_printf("ERR\n");
                 RMT.int_ena.val &= (~(BIT(i)));
@@ -677,8 +356,6 @@ static unsigned gc_isr(unsigned cause) {
 }
 
 void nsi_init(uint32_t package) {
-    uint32_t system = (wired_adapter.system_id == N64) ? 0 : 1;
-
     periph_ll_enable_clk_clear_rst(PERIPH_RMT_MODULE);
 
     RMT.apb_conf.fifo_mask = 1;
@@ -686,52 +363,48 @@ void nsi_init(uint32_t package) {
     nsi_port_cfg(0xF);
 
     for (uint32_t i = 0; i < ARRAY_SIZE(gpio_pin); i++) {
-        RMT.conf_ch[rmt_ch[i][system]].conf0.div_cnt = 40; /* 80MHz (APB CLK) / 40 = 0.5us TICK */;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.mem_rd_rst = 1;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.mem_wr_rst = 1;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.tx_conti_mode = 0;
-        RMT.conf_ch[rmt_ch[i][system]].conf0.mem_size = 8;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.mem_owner = RMT_LL_MEM_OWNER_SW;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.ref_always_on = 1;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.idle_out_en = 1;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.idle_out_lv = 1;
-        RMT.conf_ch[rmt_ch[i][system]].conf0.carrier_en = 0;
-        RMT.conf_ch[rmt_ch[i][system]].conf0.carrier_out_lv = 0;
-        RMT.carrier_duty_ch[rmt_ch[i][system]].high = 0;
-        RMT.carrier_duty_ch[rmt_ch[i][system]].low = 0;
-        RMT.conf_ch[rmt_ch[i][system]].conf0.idle_thres = (wired_adapter.system_id == N64) ? N64_BIT_PERIOD_TICKS : GC_BIT_PERIOD_TICKS;
-        RMT.conf_ch[rmt_ch[i][system]].conf1.rx_filter_thres = 0; /* No minimum length */
-        RMT.conf_ch[rmt_ch[i][system]].conf1.rx_filter_en = 0;
+        RMT.conf_ch[rmt_ch[i][1]].conf0.div_cnt = 40;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.mem_rd_rst = 1;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.mem_wr_rst = 1;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.tx_conti_mode = 0;
+        RMT.conf_ch[rmt_ch[i][1]].conf0.mem_size = 8;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.mem_owner = RMT_LL_MEM_OWNER_SW;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.ref_always_on = 1;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.idle_out_en = 1;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.idle_out_lv = 1;
+        RMT.conf_ch[rmt_ch[i][1]].conf0.carrier_en = 0;
+        RMT.conf_ch[rmt_ch[i][1]].conf0.carrier_out_lv = 0;
+        RMT.carrier_duty_ch[rmt_ch[i][1]].high = 0;
+        RMT.carrier_duty_ch[rmt_ch[i][1]].low = 0;
+        RMT.conf_ch[rmt_ch[i][1]].conf0.idle_thres = GC_BIT_PERIOD_TICKS;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.rx_filter_thres = 0;
+        RMT.conf_ch[rmt_ch[i][1]].conf1.rx_filter_en = 0;
 
-        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_TX_DONE(rmt_ch[i][system]), 1);
-        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][system]), 1);
-        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_ERROR(rmt_ch[i][system]), 1);
+        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_TX_DONE(rmt_ch[i][1]), 1);
+        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][1]), 1);
+        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_ERROR(rmt_ch[i][1]), 1);
 
-        rmt_ll_rx_enable(&RMT, rmt_ch[i][system], 0);
-        rmt_ll_rx_reset_pointer(&RMT, rmt_ch[i][system]);
-        rmt_ll_clear_interrupt_status(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][system]));
-        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][system]), 1);
-        rmt_ll_rx_enable(&RMT, rmt_ch[i][system], 1);
+        rmt_ll_rx_enable(&RMT, rmt_ch[i][1], 0);
+        rmt_ll_rx_reset_pointer(&RMT, rmt_ch[i][1]);
+        rmt_ll_clear_interrupt_status(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][1]));
+        rmt_ll_enable_interrupt(&RMT, RMT_LL_EVENT_RX_DONE(rmt_ch[i][1]), 1);
+        rmt_ll_rx_enable(&RMT, rmt_ch[i][1], 1);
     }
 
-    intexc_alloc_iram(ETS_RMT_INTR_SOURCE, 19, wired_adapter.system_id == N64 ? n64_isr : gc_isr);
+    intexc_alloc_iram(ETS_RMT_INTR_SOURCE, 19, gc_isr);
 }
 
 void nsi_port_cfg(uint16_t mask) {
-    uint32_t system = (wired_adapter.system_id == N64) ? 0 : 1;
-
     for (uint32_t i = 0; i < ARRAY_SIZE(gpio_pin); i++) {
-
         if (mask & 0x1) {
             PIN_FUNC_SELECT(GPIO_PIN_MUX_REG_IRAM[gpio_pin[i]], PIN_FUNC_GPIO);
-            /* Bidirectional open-drain */
             gpio_set_direction_iram(gpio_pin[i], GPIO_MODE_INPUT_OUTPUT_OD);
-            gpio_matrix_out(gpio_pin[i], RMT_SIG_OUT0_IDX + rmt_ch[i][system], 0, 0);
-            gpio_matrix_in(gpio_pin[i], RMT_SIG_IN0_IDX + rmt_ch[i][system], 0);
+            gpio_matrix_out(gpio_pin[i], RMT_SIG_OUT0_IDX + rmt_ch[i][1], 0, 0);
+            gpio_matrix_in(gpio_pin[i], RMT_SIG_IN0_IDX + rmt_ch[i][1], 0);
         }
         else {
             gpio_reset_iram(gpio_pin[i]);
-            gpio_matrix_in(GPIO_MATRIX_CONST_ONE_INPUT, RMT_SIG_IN0_IDX + rmt_ch[i][system], 0);
+            gpio_matrix_in(GPIO_MATRIX_CONST_ONE_INPUT, RMT_SIG_IN0_IDX + rmt_ch[i][1], 0);
         }
         mask >>= 1;
     }
