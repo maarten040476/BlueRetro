@@ -19,9 +19,13 @@
 #include "tools/util.h"
 #include "adapter/adapter.h"
 #include "adapter/config.h"
-#include "adapter/wired/real.h"
 #include "wired_bare.h"
 #include "real_spi.h"
+
+void real_meta_init(struct wired_ctrl *ctrl_data);
+void real_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void real_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void real_gen_turbo_mask(int32_t dev_mode, struct wired_data *wired_data);
 
 enum {
     DEV_NONE = 0,
