@@ -12,12 +12,18 @@
 #include "adapter/adapter.h"
 #include "adapter/config.h"
 #include "adapter/memory_card.h"
-#include "adapter/wired/dc.h"
 #include "system/core0_stall.h"
 #include "system/delay.h"
 #include "system/gpio.h"
 #include "system/intr.h"
 #include "maple.h"
+
+/* Declarations formerly in adapter/wired/dc.h */
+void dc_meta_init(struct wired_ctrl *ctrl_data);
+void dc_init_buffer(int32_t dev_mode, struct wired_data *wired_data);
+void dc_from_generic(int32_t dev_mode, struct wired_ctrl *ctrl_data, struct wired_data *wired_data);
+void dc_fb_to_generic(int32_t dev_mode, struct raw_fb *raw_fb_data, struct generic_fb *fb_data);
+void dc_gen_turbo_mask(struct wired_data *wired_data);
 
 #define ID_CTRL    0x00000001
 #define ID_VMU_MEM 0x00000002
