@@ -9,7 +9,6 @@ set(cov_srcs
     "adapter/mapping_quirks.c"
     "adapter/memory_card.c"
     "adapter/wired/npiso.c"
-    "adapter/wired/cdi.c"
     "adapter/wired/saturn.c"
     "adapter/wired/pce.c"
     "adapter/wired/genesis.c"
