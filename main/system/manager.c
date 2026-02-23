@@ -34,7 +34,6 @@
 
 #define POWER_ON_PIN 13
 #define POWER_OFF_PIN 16
-#define POWER_SENSE_PIN 39
 
 #define POWER_OFF_ALT_PIN 12
 
@@ -481,17 +480,8 @@ static void sys_mgr_power_off(void) {
 #endif
 }
 
-static int32_t sys_mgr_get_power(void) {
-#ifdef CONFIG_BLUERETRO_SYSTEM_UNIVERSAL
+static inline int32_t sys_mgr_get_power(void) {
     return 1;
-#else
-    if (hw_config.external_adapter) {
-        return 1;
-    }
-    else {
-        return gpio_get_level(POWER_SENSE_PIN);
-    }
-#endif
 }
 
 static int32_t sys_mgr_get_boot_btn(void) {
@@ -657,15 +647,6 @@ void sys_mgr_init(uint32_t package) {
     if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
         led_init_cnt = 4;
     }
-
-#ifdef CONFIG_BLUERETRO_HW2
-    for (uint32_t i = 0; i < hw_config.port_cnt; i++) {
-        io_conf.pin_bit_mask = 1ULL << sense_list[i];
-        gpio_config(&io_conf);
-    }
-    io_conf.pin_bit_mask = 1ULL << POWER_SENSE_PIN;
-    gpio_config(&io_conf);
-#endif
 
 #ifndef CONFIG_BLUERETRO_HW2
     for (uint32_t i = 0; i < sizeof(led_list); i++) {
