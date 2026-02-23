@@ -5,19 +5,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "npiso_io.h"
-#include "cdi_uart.h"
-#include "sega_io.h"
-#include "pce_io.h"
 #include "nsi.h"
-#include "maple.h"
-#include "jvs_uart.h"
-#include "pcfx_spi.h"
-#include "ps_spi.h"
-#include "real_spi.h"
-#include "snes_spi.h"
-#include "jag_io.h"
-#include "wii_i2c.h"
 #include "adapter/adapter.h"
 #include "wired_bare.h"
 
@@ -58,24 +46,24 @@ static const wired_init_t wired_init[WIRED_MAX] = {
     NULL, /* WIRED_AUTO */
     NULL, /* PARALLEL_1P */
     NULL, /* PARALLEL_2P */
-    npiso_init, /* NES */
-    pce_io_init, /* PCE */
-    sega_io_init, /* GENESIS */
-    snes_spi_init, /* SNES */
-    cdi_uart_init, /* CDI */
+    NULL, /* NES */
+    NULL, /* PCE */
+    NULL, /* GENESIS */
+    NULL, /* SNES */
+    NULL, /* CDI */
     NULL, /* CD32 */
-    real_spi_init, /* REAL_3DO */
-    jag_io_init, /* JAGUAR */
-    ps_spi_init, /* PSX */
-    sega_io_init, /* SATURN */
-    pcfx_spi_init, /* PCFX */
-    jvs_init, /* JVS */
-    nsi_init, /* N64 */
-    maple_init, /* DC */
-    ps_spi_init, /* PS2 */
+    NULL, /* REAL_3DO */
+    NULL, /* JAGUAR */
+    NULL, /* PSX */
+    NULL, /* SATURN */
+    NULL, /* PCFX */
+    NULL, /* JVS */
+    NULL, /* N64 */
+    NULL, /* DC */
+    NULL, /* PS2 */
     nsi_init, /* GC */
-    wii_i2c_init, /* WII_EXT */
-    npiso_init, /* VB */
+    NULL, /* WII_EXT */
+    NULL, /* VB */
     NULL, /* PARALLEL_1P_OD */
     NULL, /* PARALLEL_2P_OD */
     NULL, /* SEA_BOARD */
@@ -93,15 +81,15 @@ static const wired_port_cfg_t wired_port_cfg[WIRED_MAX] = {
     NULL, /* CD32 */
     NULL, /* REAL_3DO */
     NULL, /* JAGUAR */
-    ps_spi_port_cfg, /* PSX */
+    NULL, /* PSX */
     NULL, /* SATURN */
     NULL, /* PCFX */
     NULL, /* JVS */
-    nsi_port_cfg, /* N64 */
-    maple_port_cfg, /* DC */
-    ps_spi_port_cfg, /* PS2 */
+    NULL, /* N64 */
+    NULL, /* DC */
+    NULL, /* PS2 */
     nsi_port_cfg, /* GC */
-    wii_i2c_port_cfg, /* WII_EXT */
+    NULL, /* WII_EXT */
     NULL, /* VB */
     NULL, /* PARALLEL_1P_OD */
     NULL, /* PARALLEL_2P_OD */
