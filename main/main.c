@@ -22,7 +22,6 @@
 #include "bluetooth/host.h"
 #include "wired/detect.h"
 #include "wired/wired_bare.h"
-#include "wired/wired_rtos.h"
 #include "adapter/memory_card.h"
 #include "system/manager.h"
 #include "tests/ws_srv.h"
@@ -120,10 +119,6 @@ static void wl_init_task(void *arg) {
         printf("Bluetooth init fail!\n");
     }
 #endif
-
-    if (wired_adapter.system_id < WIRED_MAX) {
-        wired_rtos_init();
-    }
 
 #ifndef CONFIG_BLUERETRO_QEMU
     mc_init();
