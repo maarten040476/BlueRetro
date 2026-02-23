@@ -15,7 +15,6 @@
 #include "att_hid.h"
 #include "smp.h"
 #include "tools/util.h"
-#include "system/led.h"
 #include "adapter/config.h"
 #include "wired/wired_bare.h"
 #include "zephyr/uuid.h"
@@ -1266,7 +1265,6 @@ const char *bt_hci_get_device_name(void) {
 
 void bt_hci_start_inquiry(void) {
     if (!inquiry_override) {
-        err_led_pulse();
         inquiry_state = 1;
         bt_nb_inquiry = 0;
         bt_hci_cmd_le_set_scan_enable(0);
@@ -1282,7 +1280,6 @@ void bt_hci_stop_inquiry(void) {
     bt_hci_cmd_le_set_scan_param_passive();
     bt_hci_cmd_le_set_scan_enable(1);
     inquiry_state = 0;
-    err_led_clear();
 }
 
 uint32_t bt_hci_get_inquiry(void) {
