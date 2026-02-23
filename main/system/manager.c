@@ -25,7 +25,6 @@
 #include "wired/wired_bare.h"
 #include "tools/util.h"
 #include "system/fs.h"
-#include "system/led.h"
 #include "bare_metal_app_cpu.h"
 #include "manager.h"
 
@@ -72,7 +71,6 @@ static uint8_t led_list[] = {
     LED_P1_PIN, LED_P2_PIN, LED_P3_PIN, LED_P4_PIN
 };
 static uint8_t current_pulse_led = LED_P1_PIN;
-static uint8_t err_led_pin;
 static uint8_t power_off_pin = POWER_OFF_PIN;
 static uint8_t led_init_cnt = 1;
 static uint16_t port_state = 0;
@@ -198,7 +196,6 @@ static void port_led_pulse(uint32_t pin) {
 static void set_leds_as_btn_status(uint8_t state) {
     ledc_set_duty_and_update(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, hw_config.led_flash_on_duty_cycle, 0);
 
-    /* Use all port LEDs */
     for (uint32_t i = 0; i < hw_config.port_cnt; i++) {
         uint8_t pin = led_list[i];
 
@@ -207,14 +204,6 @@ static void set_leds_as_btn_status(uint8_t state) {
         if (state) {
             esp_rom_gpio_connect_out_signal(pin, ledc_periph_signal[LEDC_LOW_SPEED_MODE].sig_out0_idx + LEDC_CHANNEL_1, 0, 0);
         }
-    }
-
-    /* Use error LED as well */
-    if (state) {
-        esp_rom_gpio_connect_out_signal(err_led_pin, ledc_periph_signal[LEDC_LOW_SPEED_MODE].sig_out0_idx + LEDC_CHANNEL_1, 0, 0);
-    }
-    else {
-        esp_rom_gpio_connect_out_signal(err_led_pin, ledc_periph_signal[LEDC_HIGH_SPEED_MODE].sig_out0_idx + LEDC_CHANNEL_0, 0, 0);
     }
 }
 
@@ -226,11 +215,9 @@ static void power_on_hdl(void) {
     prev = curr;
     curr = sys_mgr_get_power();
     if (curr) {
-        /* System is power on */
         bt_hci_inquiry_override(0);
 
         if (bt_host_get_active_dev(&not_used) < 0) {
-            /* No Bt device */
             uint32_t port_cnt_loc = 0;
 
             for (uint32_t i = 0; i < hw_config.port_cnt; i++) {
@@ -239,7 +226,6 @@ static void power_on_hdl(void) {
                 }
             }
             if (port_cnt_loc == hw_config.port_cnt) {
-                /* No wired controller */
                 if (!bt_hci_get_inquiry()) {
                     bt_hci_start_inquiry();
                 }
@@ -247,24 +233,20 @@ static void power_on_hdl(void) {
         }
     }
     else {
-        /* System is off */
         if (curr != prev) {
-            /* Kick BT controllers on off transition */
             bt_host_disconnect_all();
         }
         else if (bt_host_get_hid_init_dev(&not_used) > -1) {
-            /* Power on BT connect */
             bt_hci_inquiry_override(0);
             sys_mgr_power_on();
             return;
         }
-        /* Make sure no inquiry while power off */
         bt_hci_inquiry_override(1);
         if (bt_hci_get_inquiry()) {
             bt_hci_stop_inquiry();
         }
     }
-#endif /* CONFIG_BLUERETRO_HW2 */
+#endif
 }
 
 static void wired_port_hdl(void) {
@@ -297,7 +279,6 @@ static void wired_port_hdl(void) {
             port_mask |= BIT(idx) | adapter_get_out_mask(idx);
         }
         idx++;
-
 
         if (device->ids.out_idx < hw_config.port_cnt) {
             if (bt_ready) {
@@ -346,7 +327,6 @@ static void wired_port_hdl(void) {
         wired_bare_port_cfg(port_mask);
         port_state = port_mask;
         if (hw_config.ports_sense_p3_p4_as_output) {
-            /* Toggle Wii classic sense line to force ctrl reinit */
             set_sense_out(SENSE_P3_PIN, 0);
             set_sense_out(SENSE_P4_PIN, 0);
             vTaskDelay(hw_config.ports_sense_output_ms / portTICK_PERIOD_MS);
@@ -362,9 +342,7 @@ static void boot_btn_hdl(void) {
     uint32_t hold_cnt = 0;
     uint32_t state = 0;
 
-    /* Let inhibit_cnt reach 0 before handling button again */
     if (inhibit_cnt && inhibit_cnt--) {
-        /* Power off on quick double press */
         if (check_qdp && sys_mgr_get_power() && sys_mgr_get_boot_btn()) {
             sys_mgr_power_off();
             check_qdp = 0;
@@ -398,7 +376,6 @@ static void boot_btn_hdl(void) {
         }
 
         if (sys_mgr_get_power()) {
-            /* System is on */
             switch (state) {
                 case SYS_MGR_BTN_STATE0:
                     sys_mgr_reset();
@@ -421,7 +398,6 @@ static void boot_btn_hdl(void) {
             }
         }
         else {
-            /* System is off */
             switch (state) {
                 case SYS_MGR_BTN_STATE0:
                     sys_mgr_power_on();
@@ -447,7 +423,6 @@ static void sys_mgr_task(void *arg) {
     while (1) {
         boot_btn_hdl();
 
-        /* Fetch system cmd to execute */
         if (cmd_q_hdl) {
             cmd = (uint8_t *)xRingbufferReceive(cmd_q_hdl, &cmd_len, 0);
             if (cmd) {
@@ -458,7 +433,6 @@ static void sys_mgr_task(void *arg) {
             }
         }
 
-        /* Update those only 1/32 loop */
         if ((cnt & 0x1F) == 0x1F) {
             wired_port_hdl();
             if (!hw_config.external_adapter) {
@@ -574,7 +548,6 @@ void sys_mgr_cmd(uint8_t cmd) {
     else {
         printf("# %s cmd_q_hdl NULL!\n", __FUNCTION__);
         if (cmd == SYS_MGR_CMD_WIRED_RST) {
-            /* For gameid cfg we may need to reset bare core very early */
             sys_mgr_wired_reset();
         }
     }
@@ -592,7 +565,6 @@ void sys_mgr_init(uint32_t package) {
     gpio_config(&io_conf);
 
     chip_package = package;
-    err_led_pin = err_led_get_pin();
 
     ledc_timer_config_t ledc_timer = {
         .duty_resolution = LEDC_TIMER_20_BIT,
@@ -681,8 +653,6 @@ void sys_mgr_init(uint32_t package) {
 
     hw_config_patch();
 
-    err_led_cfg_update();
-
     led_init_cnt = hw_config.port_cnt;
     if (wired_adapter.system_id == PSX || wired_adapter.system_id == PS2) {
         led_init_cnt = 4;
@@ -706,7 +676,6 @@ void sys_mgr_init(uint32_t package) {
     io_conf.mode = GPIO_MODE_OUTPUT;
     for (uint32_t i = 0; i < led_init_cnt; i++) {
 #ifdef CONFIG_BLUERETRO_HW2
-        /* Skip pin 15 if alt sense pin are used */
         if (sense_list[0] == led_list[i]) {
             continue;
         }
@@ -716,8 +685,6 @@ void sys_mgr_init(uint32_t package) {
         gpio_config(&io_conf);
 
         if (i < hw_config.port_cnt) {
-            /* Can't use GPIO mode on port LED as some wired driver overwrite whole GPIO port */
-            /* Use unused LEDC channel 2 to force output low */
             esp_rom_gpio_connect_out_signal(led_list[i], ledc_periph_signal[LEDC_LOW_SPEED_MODE].sig_out0_idx + LEDC_CHANNEL_2, 0, 0);
         }
     }
@@ -748,7 +715,6 @@ void sys_mgr_init(uint32_t package) {
     gpio_config(&io_conf);
 
     if (hw_config.ports_sense_p3_p4_as_output) {
-        /* Wii-ext got a sense line that we need to control */
         if (hw_config.ports_sense_output_od) {
             io_conf.mode = GPIO_MODE_OUTPUT_OD;
         }
@@ -766,12 +732,11 @@ void sys_mgr_init(uint32_t package) {
         gpio_set_level(SENSE_P3_PIN, 1);
     }
 
-    /* If boot switch pressed at boot, trigger system on and goes to deep sleep */
     if (sys_mgr_get_boot_btn() && !sys_mgr_get_power()) {
         sys_mgr_power_on();
         sys_mgr_deep_sleep();
     }
-#endif /* CONFIG_BLUERETRO_HW2 */
+#endif
 
     xTaskCreatePinnedToCore(sys_mgr_task, "sys_mgr_task", 2048, NULL, 5, NULL, 0);
 }
