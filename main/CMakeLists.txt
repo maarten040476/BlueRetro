@@ -54,7 +54,6 @@ set(srcs
     "tools/stats.c"
     "wired/detect.c"
     "wired/wired_bare.c"
-    "wired/wired_rtos.c"
     "wired/nsi.c"
     "zephyr/atomic.S"
 )
