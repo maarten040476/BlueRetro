@@ -46,7 +46,6 @@ set(srcs
     "system/fs.c"
     "system/gpio.c"
     "system/intr.c"
-    "system/led.c"
     "system/bare_metal_app_cpu.c"
     "system/core0_stall.c"
     "system/core0_stall_highint_hdl.S"
